@@ -1,0 +1,303 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>HEXA</title>
+<style>
+	*{ padding: 0; margin: 0; }
+	#gameContainer{ width:300px; height: 550px; overflow: hidden; }
+</style>
+</head>
+<body>
+	<div id="game_container" >
+		<canvas id="game_bg" width="300" height="550" style="position:absolute"></canvas>
+		<canvas id="game_canvas" width="300" height="550" style="position:absolute"></canvas>
+	</div>
+
+	<script type="text/javascript">
+
+		( function(){
+			var CELL_SIZE = 20;
+			var SCREEN_CELL_SIZE = 25;
+			var EMPTY = 0;
+			var WALL = 1;
+			var RECT = 2;
+			var CIRC = 3;
+			var TRIA = 4;
+			var STAR = 5;
+			var HEAR = 6;
+			var DIAM = 7;
+			var VLIN = 8;
+			var HLIN = 9;
+			var NIKE = 10;
+			var WIDTH_NUM = 10;
+			var HEIGHT_NUM = 20;
+			var FRAME_RATE = 1000;
+			var SPACE = 32;
+			var LEFT = 37;
+			var UP = 38;
+			var RIGHT = 39;
+			var DOWN = 40;
+			var BRICK_NUM = 3;
+
+			var gameCanvas = document.getElementById( 'game_canvas' );
+			var gameBg = document.getElementById( 'game_bg' );
+			var gameContext = gameCanvas.getContext( '2d' );
+			var bgContext = gameBg.getContext( '2d' );
+			var image;
+			var level = 11;
+			var board = [];
+			var nextBrick = [];
+			var brick = [];
+			var x=0;
+			var y=0;
+			var brickInterval;
+			var claerAniInterval;
+			var cleaning;
+
+			loadImage();
+
+			function loadImage(){
+				image = new Image();
+				image.addEventListener( "load", imageLoadCompleteHandler, false );
+				image.src = "assets/tile_sheet_hexa.png";
+			}
+
+			function imageLoadCompleteHandler(){
+				initGame();
+				run();
+			}
+
+			function initGame(){
+				for( var i=0, wCount=WIDTH_NUM+2 ; i<wCount ; i+=1 ){
+					board[ i ] = [];
+					for( var j=0, hCount=HEIGHT_NUM+2 ; j<hCount ; j+=1 ){
+						board[ i ][ j ] = [];
+						board[ i ][ j ] = ( i==0 || i==WIDTH_NUM+1 || j==0 || j==HEIGHT_NUM+1 ) ? WALL : EMPTY;
+					}
+				}
+			}
+
+			function run(){
+				window.addEventListener( "keydown", pressKeyHandler );
+				drawScreen();
+				createNextBrick();
+
+				function brickLoof(){
+					moveDown();
+				}
+
+				function end(){
+					clearInterval( brickInterval );
+					window.removeEventListener( "keydown", pressKeyHandler );
+					gameCanvas.width = gameCanvas.width;
+					gameContext.fillStyle = "black";
+					gameContext.font = '40px impact'
+					gameContext.fillText( "G A M E  O V E R", 40, 265 );
+				}
+
+				function pressKeyHandler( event ){
+					if( cleaning ) return;
+					switch( event.keyCode ){
+						case LEFT:
+							if( getAround( x-1, y ) == EMPTY ){
+								clearBrick();
+								x--;
+								drawBrick();
+							}
+							break;
+						case RIGHT:
+							if( getAround( x+1, y ) == EMPTY ){
+								clearBrick();
+								x++;
+								drawBrick();
+							}
+							break;
+						case UP:
+							var temp = brick[ 0 ];
+							brick[ 0 ] = brick[ 1 ];
+							brick[ 1 ] = brick[ 2 ];
+							brick[ 2 ] = temp;
+							clearBrick();
+							drawBrick();
+							break;
+						case DOWN:
+							if( getAround( x, y+1 ) == EMPTY ){
+								moveDown();
+							}
+							break;
+
+						case SPACE:
+							while( moveDown() == true ){}
+							break;
+					}
+				}
+
+				function drawScreen(){
+					for( var x=0, countX=WIDTH_NUM+2 ; x<countX ; x+=1 ){
+						for( var y=0, countY=HEIGHT_NUM+2 ; y<countY ; y+=1 ){
+							bgContext.drawImage( image, board[x][y]*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE, x*SCREEN_CELL_SIZE, y*SCREEN_CELL_SIZE, SCREEN_CELL_SIZE, SCREEN_CELL_SIZE );
+						}
+					}
+				}
+
+				function drawBoard(){
+					gameCanvas.width = gameCanvas.width;
+					for( var x=1 ; x<WIDTH_NUM+1 ; x+=1 ){
+						for( var y=1 ; y<HEIGHT_NUM+1 ; y+=1 ){
+							gameContext.drawImage( image, board[x][y]*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE, x*SCREEN_CELL_SIZE, y*SCREEN_CELL_SIZE, SCREEN_CELL_SIZE, SCREEN_CELL_SIZE );
+						}
+					}
+				}
+
+				function drawBrick(){
+					for( var i=0 ; i<BRICK_NUM ; i+=1 ){
+						gameContext.drawImage( image, brick[i]*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE, x*SCREEN_CELL_SIZE, (y*SCREEN_CELL_SIZE) + ( i*SCREEN_CELL_SIZE), SCREEN_CELL_SIZE, SCREEN_CELL_SIZE );
+					}
+				}
+
+				function clearBrick(){
+					for( var i=0 ; i<BRICK_NUM ; i+=1 ){
+						gameContext.clearRect( x*SCREEN_CELL_SIZE, (y*SCREEN_CELL_SIZE) + ( i*SCREEN_CELL_SIZE), SCREEN_CELL_SIZE, SCREEN_CELL_SIZE );
+					}
+				}
+
+				function testFull(){
+					clearInterval( brickInterval );
+					var i,x,y,t,ty=0;
+					var remove;
+					var mark=[];
+
+					function findSame(){
+						for( x=0 ; x<WIDTH_NUM+2 ; x+=1 ){
+							mark[x]=[];
+							for( y=0 ; y<HEIGHT_NUM+2 ; y+=1 ){
+								mark[x][y] = false;
+							}
+						}
+						remove = false;
+						for( y=1 ; y<HEIGHT_NUM+1 ; y+=1 ){
+							for( x=1 ; x<WIDTH_NUM+1 ; x+=1 ){
+								t = board[x][y]
+								if( t == EMPTY ) continue;
+
+								if( board[x-1][y] == t && board[x+1][y] == t){
+									for( i=-1 ; i<=1 ; i+=1 ) mark[x+i][y] = true;
+									remove = true;
+								}
+
+								if( board[x][y-1] == t && board[x][y+1] == t){
+									for( i=-1 ; i<=1 ; i+=1 ) mark[x][y+i] = true;
+									remove = true;
+								}
+
+								if( board[x-1][y-1] == t && board[x+1][y+1] == t){
+									for( i=-1 ; i<=1 ; i+=1 ) mark[x+i][y+i] = true;
+									remove = true;
+								}
+
+								if( board[x+1][y-1] == t && board[x-1][y+1] == t){
+									for( i=-1 ; i<=1 ; i+=1 ) mark[x-i][y+i] = true;
+									remove = true;
+								}
+							}
+						}
+						return remove;
+					}
+
+					var tempCount;
+					function exeTest(){
+						clearInterval( claerAniInterval );
+						if( findSame() == false ){
+							cleaning = false;
+							createNextBrick();
+						}else{
+							cleaning = true;
+							tempCount =0;
+							claerAniInterval = setInterval( claerAni, 100 );
+						}
+					}
+
+					exeTest();
+
+
+					function claerAni(){
+						if( tempCount==10 ){
+							for( y=1 ; y<HEIGHT_NUM+1 ; y+=1 ){
+								for( x=1 ; x<WIDTH_NUM+1 ; x+=1 ){
+									if( board[x][y] != EMPTY && mark[x][y] == true ){
+										for( ty=y ; ty>1 ; ty-- ){
+											board[x][ty] = board[x][ty-1];
+										}
+										board[x][1] = EMPTY;
+									}
+								}
+							}
+							drawBoard();
+							exeTest();
+						}else{
+							for( i=0 ; i<20 ; i++ ){
+								for( y=1 ; y<HEIGHT_NUM+1 ; y++ ){
+									for( x=1 ; x<WIDTH_NUM+1 ; x++ ){
+										if(  board[x][y] != EMPTY && mark[x][y] == true ){
+											if( tempCount%2 == 0 ){
+												gameContext.clearRect(  x*SCREEN_CELL_SIZE, y*SCREEN_CELL_SIZE, SCREEN_CELL_SIZE, SCREEN_CELL_SIZE );
+											}else{
+												gameContext.drawImage( image, board[x][y]*CELL_SIZE, 0, CELL_SIZE, CELL_SIZE, x*SCREEN_CELL_SIZE, y*SCREEN_CELL_SIZE, SCREEN_CELL_SIZE, SCREEN_CELL_SIZE );
+											}
+										}
+									}
+								}
+							}
+							tempCount++;
+						}
+					}
+				}
+
+				function createNextBrick(){
+					x=WIDTH_NUM/2;
+					y=2;
+					clearInterval( brickInterval );
+					brickInterval = setInterval( brickLoof, FRAME_RATE );
+					var i;
+					do{
+						for( i=0 ; i<BRICK_NUM ; i+=1 ){
+							brick[ i ] = Math.floor( Math.random()*( level - 2 ) )+2;
+						}
+					}while( brick[0] == brick[1] && brick[1] == brick[2] && brick[2] == brick[0] )
+					clearBrick();
+					drawBrick();
+
+					if( getAround( x, y-1 ) != EMPTY ) end();
+				}
+
+				function getAround( x, y ){
+					var k = EMPTY;
+					for( var i=0 ; i<BRICK_NUM ; i+=1 ){
+						k = Math.max( k, board[ x ][ y+i ] );
+					}
+					return k;
+				}
+
+				function moveDown(){
+					if( getAround( x, y+1 ) != EMPTY ){
+						updateBoard();
+						testFull();
+						return false;
+					}
+					clearBrick();
+					y++;
+					drawBrick();
+					return true;
+				}
+
+				function updateBoard(){
+					for( var i=0 ; i<BRICK_NUM ; i+=1 ){
+						board[x][y+i] = brick[ i ];
+					}
+				}
+			}
+		} )();
+	</script>
+</body>
+</html>
